@@ -139,6 +139,7 @@ func newHttpClient(config *config.Config) (*http.Client, error) {
 
 	return &client, nil
 }
+
 func (c *Client) SendRequest(details *RequestDetails) (respData []byte, err error) {
 
 	log.Printf("Sending request........\n")

@@ -3,13 +3,20 @@ package main
 import (
 	"fmt"
 	"github.com/bobo-boom/dcrnsugar/config"
+	"github.com/bobo-boom/dcrnsugar/service"
 )
 
 func main() {
-	config, err := config.LoadConfig()
+	conf, err := config.LoadConfig()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("load config err %v\n", err)
 		return
 	}
-	fmt.Println(*config)
+	s, err := service.NewService(conf)
+	if err != nil {
+		fmt.Printf("new service errr %v\n", err)
+		return
+	}
+	s.Start()
+
 }

@@ -24,14 +24,15 @@ var (
 	defaultLogfile    = filepath.Join(dcrnsugarHomeDir, defaultLogDirName)
 	defaultDatafile   = filepath.Join(dcrnsugarHomeDir, defaultDataDirName)
 
-	defaultDBHost = "127.0.0.1"
-	defaultDBPort = "5432"
-	defaultDBUser = "dcrdata"
-	defaultDBPass = "123456"
-	defaultDBName = "dcrdata"
+	defaultDBHost  = "127.0.0.1"
+	defaultDBPort  = "5432"
+	defaultDBUser  = "dcrdata"
+	defaultDBPass  = "123456"
+	defaultDBName  = "dcrdata"
+	defaultTimeOut = 20
 
-	defaultServerHost = "127.0.0.1"
-	defaultEnableSSL  = false
+	defaultServerHost = "dcrdata.decred.org"
+	defaultEnableSSL  = true
 )
 
 type Config struct {
@@ -44,11 +45,12 @@ type Config struct {
 	ShowVersion            bool   `short:"V" long:"version" description:"Display version information and exit"`
 
 	// DB
-	DBHost string `long:"dbhost" description:"DB host"`
-	DBPort string `long:"dbport" description:"DB port"`
-	DBUser string `long:"dbuser" description:"DB user"`
-	DBPass string `long:"dbpass" description:"DB pass"`
-	DBName string `long:"dbname" description:"DB name"`
+	DBHost  string `long:"dbhost" description:"DB host"`
+	DBPort  string `long:"dbport" description:"DB port"`
+	DBUser  string `long:"dbuser" description:"DB user"`
+	DBPass  string `long:"dbpass" description:"DB pass"`
+	DBName  string `long:"dbname" description:"DB name"`
+	TimeOut int    `long:"timeout" description:" timeout per work of db (second) "`
 
 	// Client
 	ServerHost string `long:"severHost" description:"explorer host"`
@@ -61,11 +63,12 @@ var defaultConfig = Config{
 	DcrnsugarDataDirectory: defaultDatafile,
 	LogPath:                defaultLogfile,
 
-	DBHost: defaultDBHost,
-	DBPort: defaultDBPort,
-	DBUser: defaultDBUser,
-	DBName: defaultDBName,
-	DBPass: defaultDBPass,
+	DBHost:  defaultDBHost,
+	DBPort:  defaultDBPort,
+	DBUser:  defaultDBUser,
+	DBName:  defaultDBName,
+	DBPass:  defaultDBPass,
+	TimeOut: defaultTimeOut,
 
 	ServerHost: defaultServerHost,
 	EnableSSL:  defaultEnableSSL,
@@ -134,6 +137,7 @@ func LoadConfig() (*Config, error) {
 		}
 	} else if err != nil {
 		fmt.Fprintln(os.Stderr, "failed to stat Configuration file at "+preCfg.ConfigPath)
+		return nil, err
 	} else {
 		err = flags.NewIniParser(parser).ParseFile(preCfg.ConfigPath)
 		if err != nil {

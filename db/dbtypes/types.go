@@ -12,8 +12,13 @@ var (
 
 // BalanceInfo  Balance table info
 type BalanceInfo struct {
-	Balance int64
-	Index   int64
-	Flag    bool
-	Address string
+	Balance int64  `json:"balance"`
+	Index   int64  `json:"index"`
+	Flag    bool   `json:"flag"`
+	Address string `json:"address"`
+}
+
+// BalanceIndex
+type BalanceIndex struct {
+	Index int64 `json:"index"`
 }

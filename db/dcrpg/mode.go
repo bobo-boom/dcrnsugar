@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/bobo-boom/dcrnsugar/db/common"
 	"github.com/bobo-boom/dcrnsugar/db/dbtypes"
-	"github.com/bobo-boom/dcrnsugar/db/internal"
 	"log"
 )
 
@@ -73,8 +73,8 @@ func sqlExecStmt(stmt *sql.Stmt, execErrPrefix string, args ...interface{}) (int
 }
 
 // TableExists checks if the specified table exists.
-func TableExists(db *sql.DB, tableName string) (bool, error) {
-	rows, err := db.Query(`select relname from pg_class where relname = $1`,
+func (db *ChainDB) TableExists(tableName string) (bool, error) {
+	rows, err := db.db.Query(`select relname from pg_class where relname = $1`,
 		tableName)
 	if err != nil {
 		return false, err
@@ -90,15 +90,15 @@ func TableExists(db *sql.DB, tableName string) (bool, error) {
 
 // CreateTable creates a table with the given name using the provided SQL
 // statement, if it does not already exist.
-func CreateTable(db *sql.DB, tableName, stmt string) error {
-	exists, err := TableExists(db, tableName)
+func (db *ChainDB) CreateTable(tableName, stmt string) error {
+	exists, err := db.TableExists(tableName)
 	if err != nil {
 		return err
 	}
 
 	if !exists {
 		log.Printf(`Creating the "%s" table.`, tableName)
-		_, err = db.Exec(stmt)
+		_, err = db.db.Exec(stmt)
 		if err != nil {
 			return err
 		}
@@ -110,6 +110,54 @@ func CreateTable(db *sql.DB, tableName, stmt string) error {
 	return err
 }
 
+func (db *ChainDB) CreateBalanceTable() error {
+
+	err := db.CreateTable(common.BalanceTableName, common.CreateBalanceTable)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (db *ChainDB) CreateBalanceIndexTable() error {
+
+	err := db.CreateTable(common.BalanceIndexTableName, common.CreateBalanceIndexTable)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (db *ChainDB) InitBalanceIndexTable() error {
+	_, err := db.db.Exec(common.InitBalanceIndexRow)
+	return err
+}
+func (db *ChainDB) CreateAddressIndexOfBalanceTable() error {
+	_, err := db.db.Exec(common.IndexBalanceTableOnAddress)
+	return err
+
+}
+
+func (db *ChainDB) RetrieveBalanceIndexCount(ctx context.Context) (int64, error) {
+	var rows *sql.Rows
+	rows, err := db.db.QueryContext(ctx, common.BalanceIndexCountRow)
+	if err != nil {
+		return 0, err
+	}
+
+	defer closeRows(rows)
+	rows.Next()
+	var count int64
+	err = rows.Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	err = rows.Err()
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
 func DropTable(db SqlExecutor, tableName string) error {
 	_, err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, tableName))
 	return err
@@ -117,7 +165,7 @@ func DropTable(db SqlExecutor, tableName string) error {
 
 func RetrieveAddresses(ctx context.Context, db *sql.DB, start int64, end int64) (addresses []string, ids []int64, err error) {
 	var rows *sql.Rows
-	rows, err = db.QueryContext(ctx, internal.SelectAddressRows, start, end)
+	rows, err = db.QueryContext(ctx, common.SelectAddressRows, start, end)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,29 +187,26 @@ func RetrieveAddresses(ctx context.Context, db *sql.DB, start int64, end int64) 
 	return
 }
 
-func RetrieveAddress(ctx context.Context, db *sql.DB, id int64) (addresses []string, ids []int64, err error) {
+func (db *ChainDB) RetrieveAddress(ctx context.Context, id int64) (string, error) {
 	var rows *sql.Rows
-	rows, err = db.QueryContext(ctx, internal.SelectAddressRow, id)
+	rows, err := db.db.QueryContext(ctx, common.SelectAddressRow, id)
 	if err != nil {
-		return nil, nil, err
+		return "", err
 	}
 
 	defer closeRows(rows)
-
-	for rows.Next() {
-		var address string
-		var id int64
-		err = rows.Scan(&address, &id)
-		if err != nil {
-			return
-		}
-		addresses = append(addresses, address)
-		ids = append(ids, id)
-
+	rows.Next()
+	var address string
+	err = rows.Scan(&address)
+	if err != nil {
+		return "", err
 	}
 	err = rows.Err()
+	if err != nil {
+		return "", err
+	}
 
-	return
+	return address, nil
 }
 
 //// DeleteDuplicateAgendas deletes rows in agendas with duplicate names leaving
@@ -173,16 +218,17 @@ func RetrieveAddress(ctx context.Context, db *sql.DB, id int64) (addresses []str
 //		return 0, nil
 //	}
 //	execErrPrefix := "failed to delete duplicate agendas: "
-//	return sqlExec(db, internal.DeleteAgendasDuplicateRows, execErrPrefix)
+//	return sqlExec(db, common.DeleteAgendasDuplicateRows, execErrPrefix)
 //}
 
-func InsertAddsBalances(db *sql.DB, balances []*dbtypes.BalanceInfo) error {
-	dbtx, err := db.Begin()
+func (db *ChainDB) InsertAddsBalances(balances []*dbtypes.BalanceInfo) error {
+	dbtx, err := db.db.Begin()
 	if err != nil {
 		return fmt.Errorf("unable to begin database balance: %w", err)
+
 	}
 
-	stmt, err := dbtx.Prepare(internal.UpsertBalanceRow)
+	stmt, err := dbtx.Prepare(common.UpsertBalanceRow)
 	if err != nil {
 		log.Fatalf("Ticket INSERT prepare: %v", err)
 		_ = dbtx.Rollback() // try, but we want the Prepare error back
@@ -210,14 +256,66 @@ func InsertAddsBalances(db *sql.DB, balances []*dbtypes.BalanceInfo) error {
 	return dbtx.Commit()
 }
 
-func InsertAddsBalance(db *sql.DB, balance *dbtypes.BalanceInfo) error {
+func (db *ChainDB) InsertAddsBalance(balance *dbtypes.BalanceInfo) error {
 
-	stmt, err := db.Prepare(internal.UpsertBalanceRow)
+	stmt, err := db.db.Prepare(common.UpsertBalanceRow)
 	if err != nil {
-		log.Fatalf("Ticket INSERT prepare: %v", err)
+		log.Fatalf("insert address err: %v", err)
 		return err
 	}
-	_, err = stmt.Exec(balance.Address, balance.Balance, balance.Index, balance.Flag)
+	_, err = stmt.Exec(balance.Address, balance.Balance, balance.Index, balance.Flag, balance.Balance)
 
 	return err
+}
+func (db *ChainDB) InsertBalanceIndex(balanceIndex *dbtypes.BalanceIndex) error {
+	stmt, err := db.db.Prepare(common.InsertBalanceIndexRow)
+	if err != nil {
+		log.Fatalf("insert address err: %v", err)
+		return err
+	}
+	_, err = stmt.Exec(balanceIndex.Index)
+
+	return err
+}
+
+func (db *ChainDB) RetrieveBestBalanceIndex(ctx context.Context) (index int64, err error) {
+	var rows *sql.Rows
+	rows, err = db.db.QueryContext(ctx, common.SelectBalanceIndexBestRow)
+	if err != nil {
+		return 0, err
+	}
+
+	defer closeRows(rows)
+
+	for rows.Next() {
+		err = rows.Scan(&index)
+		if err != nil {
+			return
+		}
+
+	}
+	err = rows.Err()
+
+	return
+}
+
+func (db *ChainDB) RetrieveBestAddressId(ctx context.Context) (index int64, err error) {
+	var rows *sql.Rows
+	rows, err = db.db.QueryContext(ctx, common.SelectBestAddressIdRow)
+	if err != nil {
+		return 0, err
+	}
+
+	defer closeRows(rows)
+
+	for rows.Next() {
+		err = rows.Scan(&index)
+		if err != nil {
+			return
+		}
+
+	}
+	err = rows.Err()
+
+	return
 }
