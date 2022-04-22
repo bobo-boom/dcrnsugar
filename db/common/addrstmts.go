@@ -5,6 +5,8 @@ const (
 
 	BalanceIndexTableName = "balanceindex"
 
+	AddressTableName = "balance_test1"
+
 	CreateBalanceTable = `CREATE TABLE IF NOT EXISTS balance (
 		id SERIAL8 PRIMARY KEY,
 		address TEXT ,
@@ -41,12 +43,12 @@ const (
 	SelectBalanceIndexBestRow = `SELECT  index FROM balanceindex 
 			ORDER BY id desc  limit 1;`
 
-	SelectAddressRow = `SELECT  address FROM addresses 
-			Where id=$1;`
+	SelectAddressRow = `SELECT  address FROM ` +AddressTableName +
+			` Where id=$1;`
 
-	SelectAddressRows = `SELECT id, address FROM addresses 
-			Where id >= $1 AND id < $2;`
+	SelectAddressRows = `SELECT id, address FROM `+ AddressTableName +
+			` Where id >= $1 AND id < $2;`
 
-	SelectBestAddressIdRow = `SELECT  id FROM addresses 
-			ORDER BY id desc limit 1;`
+	SelectBestAddressIdRow = `SELECT  id FROM `+ AddressTableName +
+			` ORDER BY id desc limit 1;`
 )

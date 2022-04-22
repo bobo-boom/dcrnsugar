@@ -56,6 +56,11 @@ func (s *Service) PrepareDB(ctx context.Context) error {
 		fmt.Printf("PrepareDB : create balance table err : %v\n", err)
 		return err
 	}
+	err = s.cdb.CreateAddressIndexOfBalanceTable()
+	if err!=nil{
+		fmt.Printf("PrepareDB :CreateAddressIndexOfBalanceTable err : %v\n", err)
+		return err
+	}
 
 	// create addressindex table
 	err = s.cdb.CreateBalanceIndexTable()
@@ -63,6 +68,7 @@ func (s *Service) PrepareDB(ctx context.Context) error {
 		fmt.Printf("PrepareDB : create balanceindex table err : %v\n", err)
 		return err
 	}
+
 	indexCount, err := s.cdb.RetrieveBalanceIndexCount(ctx)
 
 	if err != nil {
@@ -74,7 +80,7 @@ func (s *Service) PrepareDB(ctx context.Context) error {
 		if err != nil {
 			fmt.Printf("init balance index table err %v \n", err)
 		}
-		fmt.Printf("init balance index table ......")
+		fmt.Printf("init balance index table ......\n")
 
 	}
 	return nil
