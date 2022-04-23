@@ -31,9 +31,9 @@ var (
 	defaultDBName  = "dcrdata"
 	defaultTimeOut = 200
 
-	//defaultServerHost = "127.0.0.1:7777"
-	defaultServerHost = "dcrdata.decred.org"
-	defaultEnableSSL  = true
+	defaultServerHost = "127.0.0.1:7777"
+	//defaultServerHost = "dcrdata.decred.org"
+	defaultEnableSSL  = false
 )
 
 type Config struct {
