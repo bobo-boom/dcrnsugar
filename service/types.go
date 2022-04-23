@@ -15,3 +15,8 @@ type InsightAddressInfo struct {
 	TxAppearances            int64    `json:"txApperances"`            // [sic]
 	TransactionsID           []string `json:"transactions,omitempty"`
 }
+
+type AddressAndId struct {
+	id      int64
+	address string
+}

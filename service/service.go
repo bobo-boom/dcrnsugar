@@ -18,13 +18,22 @@ type Service struct {
 	cdb    *dcrpg.ChainDB
 	client *client.Client
 	config *config.Config
-	cache  *cache.CacheAddress
+
+	cache            *cache.CacheAddress
+	balanceInfoCache *cache.BalanceInfoCache
+
+	AddressCh     chan *AddressAndId
+	BalanceInfoCh chan *dbtypes.BalanceInfo
+	FinishCh      chan bool
+
+	ctx context.Context
 }
 
-func NewService(config *config.Config) (*Service, error) {
+func NewService(config *config.Config, ctx context.Context) (*Service, error) {
 
 	// new  cache
 	addrCache := cache.NewCacheAddress()
+	balanceInfoCache := cache.NewBalanceInfoCache()
 
 	// new chainDB
 	db, err := dcrpg.NewChainDB(config, addrCache, nil)
@@ -38,12 +47,19 @@ func NewService(config *config.Config) (*Service, error) {
 		fmt.Printf("new client err : %v\n", err)
 		return nil, err
 	}
-	// new service
+	//new channel
+	addrCh := make(chan *AddressAndId, 10000)
+	balanceInfoCh := make(chan *dbtypes.BalanceInfo, 10000)
+	//new service
 	s := &Service{
-		cdb:    db,
-		config: config,
-		cache:  addrCache,
-		client: c,
+		cdb:              db,
+		config:           config,
+		cache:            addrCache,
+		client:           c,
+		balanceInfoCache: balanceInfoCache,
+		AddressCh:        addrCh,
+		BalanceInfoCh:    balanceInfoCh,
+		ctx:              ctx,
 	}
 	return s, nil
 }
@@ -57,7 +73,7 @@ func (s *Service) PrepareDB(ctx context.Context) error {
 		return err
 	}
 	err = s.cdb.CreateAddressIndexOfBalanceTable()
-	if err!=nil{
+	if err != nil {
 		fmt.Printf("PrepareDB :CreateAddressIndexOfBalanceTable err : %v\n", err)
 		return err
 	}
@@ -123,6 +139,99 @@ func (s *Service) StoreBalance(balance *dbtypes.BalanceInfo) error {
 	}
 	return err
 }
+func (s *Service) GetAddressAsync() error {
+
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	start, err := s.cdb.RetrieveBestBalanceIndex(ctx)
+	if err != nil {
+		fmt.Printf("get start err %v\n", err)
+		return err
+	}
+	end, err := s.cdb.RetrieveBestAddressId(ctx)
+	if err != nil {
+		fmt.Printf("get end err %v\n", err)
+		return err
+	}
+	//获取地址
+	fmt.Printf("get address  from  %d  to %d\n", start, end)
+
+	for i := start; i <= end; i++ {
+		select {
+		case <-s.ctx.Done():
+			fmt.Println("GetAddressAsync  exit!!!")
+			return nil
+		default:
+		}
+		address, err := s.cdb.RetrieveAddress(ctx, i)
+		if err != nil {
+			fmt.Printf("get  id: %d  address: %s\n", i, address)
+			return err
+		}
+		a := &AddressAndId{address: address, id: i}
+		s.AddressCh <- a
+	}
+	s.FinishCh <- true
+	return nil
+
+}
+
+// 获取余额
+func (s *Service) GetBalanceOfAddrAsync() error {
+	// get address form ch
+	addID := &AddressAndId{}
+	for {
+		select {
+		case addID = <-s.AddressCh:
+			balance, err := s.GetBalanceOfAddr(addID.address)
+			fmt.Printf("get balacne of %s success \n", addID.address)
+			if err != nil {
+				fmt.Printf("get  %s balance err: %v\n", addID.address, balance)
+				return err
+			}
+			//todo
+			info := &dbtypes.BalanceInfo{
+				Balance: balance,
+				Index:   addID.id,
+				Flag:    false,
+				Address: addID.address,
+			}
+			//直接放入对方的channel得了
+			s.BalanceInfoCh <- info
+		case <-s.ctx.Done():
+			fmt.Println("GetBalanceOfAddrAsync exit!")
+			return nil
+		}
+
+	}
+}
+func (s *Service) CommitBalanceInfo() error {
+	b := &dbtypes.BalanceInfo{}
+	for {
+		select {
+		case b = <-s.BalanceInfoCh:
+			err := s.StoreBalance(b)
+			if err != nil {
+				fmt.Printf("store balanceInfo of %s  err : %v", b.Address, err)
+				return err
+			}
+			balanceIndex := &dbtypes.BalanceIndex{Index: b.Index}
+			err = s.cdb.InsertBalanceIndex(balanceIndex)
+			if err != nil {
+				fmt.Printf("insert balance index err %v\n", err)
+				return err
+			}
+			fmt.Printf("handle id : %d    %s success ......\n", b.Index, b.Address)
+
+		case <-s.ctx.Done():
+			fmt.Println("CommitBalanceInfo exit!")
+			return nil
+
+		}
+
+	}
+}
+
 func (s *Service) HandleAddress(id int64) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.config.TimeOut)*time.Second)
@@ -137,8 +246,11 @@ func (s *Service) HandleAddress(id int64) error {
 	}
 	//2、查看缓存
 	if s.cache.IsExist(address) {
-		fmt.Printf("%s  already  finished ......\n", address)
-		return nil
+		if s.cache.GetAddressStatus(address) {
+			fmt.Printf("%s  already  finished ......\n", address)
+			return nil
+		}
+
 	}
 	//3、获取余额
 	balance, err := s.GetBalanceOfAddr(address)
@@ -159,7 +271,7 @@ func (s *Service) HandleAddress(id int64) error {
 		return err
 	}
 	//5、记录缓存
-	s.cache.WriteCache(address)
+	s.cache.WriteCache(address, true)
 	//6、记录进度
 	balanceInfo := &dbtypes.BalanceIndex{Index: id}
 	err = s.cdb.InsertBalanceIndex(balanceInfo)

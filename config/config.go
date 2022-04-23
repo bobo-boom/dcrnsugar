@@ -29,10 +29,11 @@ var (
 	defaultDBUser  = "dcrdata"
 	defaultDBPass  = "1234656"
 	defaultDBName  = "dcrdata"
-	defaultTimeOut = 20
+	defaultTimeOut = 200
 
-	defaultServerHost = "127.0.0.1:7777"
-	defaultEnableSSL  = false
+	//defaultServerHost = "127.0.0.1:7777"
+	defaultServerHost = "dcrdata.decred.org"
+	defaultEnableSSL  = true
 )
 
 type Config struct {
@@ -79,13 +80,15 @@ var DefaultConfig = Config{
 	DcrnsugarDataDirectory: defaultDatafile,
 	LogPath:                defaultLogfile,
 
-	DBHost: defaultDBHost,
-	DBPort: defaultDBPort,
-	DBUser: defaultDBUser,
-	DBName: defaultDBName,
-	DBPass: defaultDBPass,
+	DBHost:  defaultDBHost,
+	DBPort:  defaultDBPort,
+	DBUser:  defaultDBUser,
+	DBName:  defaultDBName,
+	DBPass:  defaultDBPass,
+	TimeOut: defaultTimeOut,
 
 	ServerHost: defaultServerHost,
+	EnableSSL:  defaultEnableSSL,
 }
 
 func LoadConfig() (*Config, error) {

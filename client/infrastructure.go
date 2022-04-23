@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/bobo-boom/dcrnsugar/config"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -142,7 +141,6 @@ func newHttpClient(config *config.Config) (*http.Client, error) {
 
 func (c *Client) SendRequest(details *RequestDetails) (respData []byte, err error) {
 
-	log.Printf("Sending request........\n")
 	httpResponse, err := c.httpClient.Do(details.HttpRequest)
 	if err != nil {
 		return nil, err

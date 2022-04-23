@@ -163,9 +163,9 @@ func DropTable(db SqlExecutor, tableName string) error {
 	return err
 }
 
-func RetrieveAddresses(ctx context.Context, db *sql.DB, start int64, end int64) (addresses []string, ids []int64, err error) {
+func (db *ChainDB) RetrieveAddresses(ctx context.Context, start int64, end int64) (addresses []string, ids []int64, err error) {
 	var rows *sql.Rows
-	rows, err = db.QueryContext(ctx, common.SelectAddressRows, start, end)
+	rows, err = db.db.QueryContext(ctx, common.SelectAddressRows, start, end)
 	if err != nil {
 		return nil, nil, err
 	}

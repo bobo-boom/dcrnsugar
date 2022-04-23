@@ -1,15 +1,18 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"github.com/bobo-boom/dcrnsugar/config"
+	"github.com/bobo-boom/dcrnsugar/db/dbtypes"
 	"testing"
 )
 
 func TestService_GetBalanceOfAddr(t *testing.T) {
+	ctx, _ := context.WithCancel(context.Background())
 
 	cof := &config.DefaultConfig
-	service, err := NewService(cof)
+	service, err := NewService(cof, ctx)
 	if err != nil {
 		fmt.Printf("err : %v\n", err)
 	}
@@ -23,12 +26,86 @@ func TestService_GetBalanceOfAddr(t *testing.T) {
 
 func TestService_HandleAddress(t *testing.T) {
 	cof := &config.DefaultConfig
-	service, err := NewService(cof)
+	ctx, _ := context.WithCancel(context.Background())
+
+	service, err := NewService(cof, ctx)
 	if err != nil {
 		fmt.Printf("err : %v\n", err)
 	}
 	err = service.HandleAddress(1000)
 	if err != nil {
 		fmt.Printf("err : %v\n", err)
+	}
+}
+
+func TestService_GetAddressAsync(t *testing.T) {
+	cof := &config.DefaultConfig
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	service, err := NewService(cof, ctx)
+	if err != nil {
+		fmt.Printf("err : %v\n", err)
+	}
+	go func() {
+		err2 := service.GetAddressAsync()
+		if err2 != nil {
+			fmt.Println(err2)
+		}
+	}()
+	var ad *AddressAndId
+	for {
+		select {
+		case ad = <-service.AddressCh:
+			fmt.Println(*ad)
+		}
+	}
+
+}
+func TestService_GetBalanceOfAddrAsync(t *testing.T) {
+	cof := &config.DefaultConfig
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service, err := NewService(cof, ctx)
+	if err != nil {
+		fmt.Printf("err : %v\n", err)
+	}
+
+	go func() {
+		err2 := service.GetBalanceOfAddrAsync()
+		if err2 != nil {
+			fmt.Println(err2)
+		}
+	}()
+	for {
+		addid := &AddressAndId{
+			id:      1,
+			address: "DsjNv5h3jr1cZs5XF8TrPv2vhCbikwnE51B",
+		}
+		service.AddressCh <- addid
+	}
+}
+func TestService_CommitBalanceInfo(t *testing.T) {
+	cof := &config.DefaultConfig
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service, err := NewService(cof, ctx)
+	if err != nil {
+		fmt.Printf("err : %v\n", err)
+	}
+
+	go func() {
+		err2 := service.CommitBalanceInfo()
+		if err2 != nil {
+			fmt.Println(err2)
+		}
+	}()
+
+	for {
+		balance := &dbtypes.BalanceInfo{
+			Index:   1,
+			Balance: 12,
+		}
+		service.BalanceInfoCh <- balance
 	}
 }
