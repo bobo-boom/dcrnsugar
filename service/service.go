@@ -136,10 +136,10 @@ func (s *Service) HandleAddress(id int64) error {
 		return err
 	}
 	//2、查看缓存
-	if s.cache.IsExist(address) {
-		fmt.Printf("%s  already  finished ......\n", address)
-		return nil
-	}
+	//if s.cache.IsExist(address) {
+	//	fmt.Printf("%s  already  finished ......\n", address)
+	//	return nil
+	//}
 	//3、获取余额
 	balance, err := s.GetBalanceOfAddr(address)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *Service) HandleAddress(id int64) error {
 		return err
 	}
 	//5、记录缓存
-	s.cache.WriteCache(address)
+	//s.cache.WriteCache(address)
 	//6、记录进度
 	balanceInfo := &dbtypes.BalanceIndex{Index: id}
 	err = s.cdb.InsertBalanceIndex(balanceInfo)
