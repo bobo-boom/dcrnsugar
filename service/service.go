@@ -22,8 +22,8 @@ type Service struct {
 	cache            *cache.CacheAddress
 	balanceInfoCache *cache.BalanceInfoCache
 
-	AddressCh     chan *AddressAndId
-	BalanceInfoCh chan *dbtypes.BalanceInfo
+	AddressCh     chan []*AddressAndId
+	BalanceInfoCh chan []*dbtypes.BalanceInfo
 	FinishCh      chan bool
 
 	ctx context.Context
@@ -48,8 +48,8 @@ func NewService(config *config.Config, ctx context.Context) (*Service, error) {
 		return nil, err
 	}
 	//new channel
-	addrCh := make(chan *AddressAndId, 10000)
-	balanceInfoCh := make(chan *dbtypes.BalanceInfo, 10000)
+	addrCh := make(chan []*AddressAndId, 10000)
+	balanceInfoCh := make(chan []*dbtypes.BalanceInfo, 10000)
 	//new service
 	s := &Service{
 		cdb:              db,
@@ -139,6 +139,16 @@ func (s *Service) StoreBalance(balance *dbtypes.BalanceInfo) error {
 	}
 	return err
 }
+
+func (s *Service) StoreBalanceBatch(balance []*dbtypes.BalanceInfo) error {
+
+	err := s.cdb.InsertAddsBalances(balance)
+	if err != nil {
+		fmt.Printf("store balance err %v\n", err)
+		return err
+	}
+	return err
+}
 func (s *Service) GetAddressAsync() error {
 
 	ctx, cancel := context.WithCancel(s.ctx)
@@ -155,49 +165,67 @@ func (s *Service) GetAddressAsync() error {
 	}
 	//获取地址
 	fmt.Printf("get address  from  %d  to %d\n", start, end)
-
-	for i := start; i <= end; i++ {
+	var step int64
+	step = 10000
+	for i := start; i <= end; {
+		if end-i < int64(step) {
+			step = end - i
+		}
 		select {
 		case <-s.ctx.Done():
 			fmt.Println("GetAddressAsync  exit!!!")
 			return nil
 		default:
 		}
-		address, err := s.cdb.RetrieveAddress(ctx, i)
+		//address, err := s.cdb.RetrieveAddress(ctx, i)
+
+		addresses, ids, err := s.cdb.RetrieveAddresses(ctx, i, i+step)
+
 		if err != nil {
-			fmt.Printf("get  id: %d  address: %s\n", i, address)
+			fmt.Printf("get  id %d   to %d", ids[0], ids[len(ids)]-1)
 			return err
 		}
-		a := &AddressAndId{address: address, id: i}
-		s.AddressCh <- a
+		addressIds := make([]*AddressAndId, 0)
+		for index, address := range addresses {
+			ad := &AddressAndId{address: address, id: ids[index]}
+			addressIds = append(addressIds, ad)
+		}
+		s.AddressCh <- addressIds
+		i += step
 	}
 	s.FinishCh <- true
 	return nil
 
 }
+func (s *Service) GetGetBalanceOfAddrs(addrs []*AddressAndId) ([]*dbtypes.BalanceInfo, error) {
+	infos := make([]*dbtypes.BalanceInfo, 0)
+	for _, addrID := range addrs {
+		balance, err := s.GetBalanceOfAddr(addrID.address)
+		if err != nil {
+			fmt.Printf("get  %s balance err: %v\n", addrID.address, balance)
+			return nil, err
+		}
+		info := &dbtypes.BalanceInfo{Balance: balance, Index: addrID.id, Flag: false, Address: addrID.address}
+		infos = append(infos, info)
+	}
+	fmt.Printf("get balacne %d to %d  success \n", addrs[0].id, addrs[len(addrs)-1].id)
+
+	return infos, nil
+}
 
 // 获取余额
 func (s *Service) GetBalanceOfAddrAsync() error {
 	// get address form ch
-	addID := &AddressAndId{}
+	var adds []*AddressAndId
 	for {
 		select {
-		case addID = <-s.AddressCh:
-			balance, err := s.GetBalanceOfAddr(addID.address)
-			fmt.Printf("get balacne of %s success \n", addID.address)
+		case adds = <-s.AddressCh:
+			addsInfo, err := s.GetGetBalanceOfAddrs(adds)
 			if err != nil {
-				fmt.Printf("get  %s balance err: %v\n", addID.address, balance)
-				return err
+				fmt.Printf("get balacne %d to %d  success \n", adds[0].id, adds[len(adds)-1].id)
+
 			}
-			//todo
-			info := &dbtypes.BalanceInfo{
-				Balance: balance,
-				Index:   addID.id,
-				Flag:    false,
-				Address: addID.address,
-			}
-			//直接放入对方的channel得了
-			s.BalanceInfoCh <- info
+			s.BalanceInfoCh <- addsInfo
 		case <-s.ctx.Done():
 			fmt.Println("GetBalanceOfAddrAsync exit!")
 			return nil
@@ -205,23 +233,24 @@ func (s *Service) GetBalanceOfAddrAsync() error {
 
 	}
 }
+
 func (s *Service) CommitBalanceInfo() error {
-	b := &dbtypes.BalanceInfo{}
+	var bs []*dbtypes.BalanceInfo
 	for {
 		select {
-		case b = <-s.BalanceInfoCh:
-			err := s.StoreBalance(b)
+		case bs = <-s.BalanceInfoCh:
+			err := s.StoreBalanceBatch(bs)
 			if err != nil {
-				fmt.Printf("store balanceInfo of %s  err : %v", b.Address, err)
+				fmt.Printf("store balanceInfo from %d  to %d err : %v", bs[0].Index, bs[len(bs)-1].Index, err)
 				return err
 			}
-			balanceIndex := &dbtypes.BalanceIndex{Index: b.Index}
+			balanceIndex := &dbtypes.BalanceIndex{Index: bs[len(bs)-1].Index}
 			err = s.cdb.InsertBalanceIndex(balanceIndex)
 			if err != nil {
 				fmt.Printf("insert balance index err %v\n", err)
 				return err
 			}
-			fmt.Printf("handle id : %d    %s success ......\n", b.Index, b.Address)
+			fmt.Printf("handle id from  %d   to %d success ......\n", bs[0].Index, bs[len(bs)-1].Index)
 
 		case <-s.ctx.Done():
 			fmt.Println("CommitBalanceInfo exit!")

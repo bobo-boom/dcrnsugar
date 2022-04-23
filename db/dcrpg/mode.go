@@ -175,7 +175,7 @@ func (db *ChainDB) RetrieveAddresses(ctx context.Context, start int64, end int64
 	for rows.Next() {
 		var address string
 		var id int64
-		err = rows.Scan(&address, &id)
+		err = rows.Scan(&id, &address)
 		if err != nil {
 			return
 		}
@@ -237,7 +237,7 @@ func (db *ChainDB) InsertAddsBalances(balances []*dbtypes.BalanceInfo) error {
 
 	for _, b := range balances {
 
-		_, err = stmt.Exec(b.Address, b.Balance, b.Index, b.Flag)
+		_, err = stmt.Exec(b.Address, b.Balance, b.Index, b.Flag, b.Balance)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				continue

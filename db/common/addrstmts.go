@@ -5,9 +5,9 @@ const (
 
 	BalanceIndexTableName = "balanceindexasync"
 
-	AddressTableName = "balance_test1"
+	AddressTableName = "addresses"
 
-	CreateBalanceTable = `CREATE TABLE IF NOT EXISTS ` + BalanceTableName+` (
+	CreateBalanceTable = `CREATE TABLE IF NOT EXISTS ` + BalanceTableName + ` (
 		id SERIAL8 PRIMARY KEY,
 		address TEXT ,
 		balance INT8 ,
@@ -15,7 +15,7 @@ const (
 		flag    BOOLEAN
 
 	);`
-	insertBalanceRow = `INSERT INTO ` + BalanceTableName+` (address,balance,index,flag) VALUES ($1, $2, $3 ,$4 )`
+	insertBalanceRow = `INSERT INTO ` + BalanceTableName + ` (address,balance,index,flag) VALUES ($1, $2, $3 ,$4 )`
 
 	InsertBalanceRow = insertBalanceRow + `RETURNING id;`
 
@@ -24,25 +24,24 @@ const (
 	IndexOfBalanceTableOnAddress = "address_index_async"
 
 	IndexBalanceTableOnAddress = `CREATE UNIQUE INDEX IF NOT EXISTS ` + IndexOfBalanceTableOnAddress +
-		` ON ` + BalanceTableName+`(address);`
+		` ON ` + BalanceTableName + `(address);`
 
 	//BalanceIdex
 
-	CreateBalanceIndexTable = `CREATE TABLE IF NOT EXISTS `+ BalanceIndexTableName+` (
+	CreateBalanceIndexTable = `CREATE TABLE IF NOT EXISTS ` + BalanceIndexTableName + ` (
 		id SERIAL8 PRIMARY KEY,
         index  INT8
 	);`
-	InitBalanceIndexRow = `INSERT INTO `+ BalanceIndexTableName+`  (index) VALUES (1)`
+	InitBalanceIndexRow = `INSERT INTO ` + BalanceIndexTableName + `  (index) VALUES (1)`
 
-	BalanceIndexCountRow = `SELECT count(index) from `+ BalanceIndexTableName
+	BalanceIndexCountRow = `SELECT count(index) from ` + BalanceIndexTableName
 
-	insertBalanceIndexRow = `INSERT INTO `+ BalanceIndexTableName+`  (index) VALUES ($1 )`
+	insertBalanceIndexRow = `INSERT INTO ` + BalanceIndexTableName + `  (index) VALUES ($1 )`
 
 	InsertBalanceIndexRow = insertBalanceIndexRow + `RETURNING id;`
 
-	SelectBalanceIndexBestRow = `SELECT  index FROM `+ BalanceIndexTableName+`  
+	SelectBalanceIndexBestRow = `SELECT  index FROM ` + BalanceIndexTableName + `  
 			ORDER BY id desc  limit 1;`
-
 
 	SelectAddressRow = `SELECT  address FROM ` + AddressTableName +
 		` Where id=$1;`
