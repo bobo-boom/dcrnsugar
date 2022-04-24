@@ -10,6 +10,7 @@ import (
 	"github.com/bobo-boom/dcrnsugar/db/dbtypes"
 	"github.com/bobo-boom/dcrnsugar/db/dcrpg"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -50,6 +51,7 @@ func NewService(config *config.Config, ctx context.Context) (*Service, error) {
 	//new channel
 	addrCh := make(chan []*AddressAndId, 10000)
 	balanceInfoCh := make(chan []*dbtypes.BalanceInfo, 10000)
+	FinishCh := make(chan bool)
 	//new service
 	s := &Service{
 		cdb:              db,
@@ -60,6 +62,7 @@ func NewService(config *config.Config, ctx context.Context) (*Service, error) {
 		AddressCh:        addrCh,
 		BalanceInfoCh:    balanceInfoCh,
 		ctx:              ctx,
+		FinishCh:         FinishCh,
 	}
 	return s, nil
 }
@@ -166,10 +169,10 @@ func (s *Service) GetAddressAsync() error {
 	//获取地址
 	fmt.Printf("get address  from  %d  to %d\n", start, end)
 	var step int64
-	step = 10000
+	step = 10
 	for i := start; i <= end; {
 		if end-i < int64(step) {
-			step = end - i
+			step = end - i + 1 //防止 i ==end 的情况
 		}
 		select {
 		case <-s.ctx.Done():
@@ -193,7 +196,10 @@ func (s *Service) GetAddressAsync() error {
 		s.AddressCh <- addressIds
 		i += step
 	}
-	s.FinishCh <- true
+	go func() {
+		s.FinishCh <- true
+
+	}()
 	return nil
 
 }
@@ -208,7 +214,7 @@ func (s *Service) GetGetBalanceOfAddrs(addrs []*AddressAndId) ([]*dbtypes.Balanc
 		info := &dbtypes.BalanceInfo{Balance: balance, Index: addrID.id, Flag: false, Address: addrID.address}
 		infos = append(infos, info)
 	}
-	fmt.Printf("get balacne %d to %d  success \n", addrs[0].id, addrs[len(addrs)-1].id)
+	//fmt.Printf("get balacne %d to %d  success \n", addrs[0].id, addrs[len(addrs)-1].id)
 
 	return infos, nil
 }
@@ -220,11 +226,15 @@ func (s *Service) GetBalanceOfAddrAsync() error {
 	for {
 		select {
 		case adds = <-s.AddressCh:
-			addsInfo, err := s.GetGetBalanceOfAddrs(adds)
-			if err != nil {
-				fmt.Printf("get balacne %d to %d  success \n", adds[0].id, adds[len(adds)-1].id)
+			var wg sync.WaitGroup
 
+			err, addsInfo := BalanceWorkers(s, adds, 5, &wg)
+			if err != nil {
+				fmt.Printf("get balance err %v\n", err)
+				return err
 			}
+			fmt.Printf("get balacne %d to %d  success \n", adds[0].id, adds[len(adds)-1].id)
+
 			s.BalanceInfoCh <- addsInfo
 		case <-s.ctx.Done():
 			fmt.Println("GetBalanceOfAddrAsync exit!")
@@ -232,6 +242,79 @@ func (s *Service) GetBalanceOfAddrAsync() error {
 		}
 
 	}
+}
+func BalanceWorkers(s *Service, addrs []*AddressAndId, nums int, wg *sync.WaitGroup) (error, []*dbtypes.BalanceInfo) {
+	if len(addrs) == 0 {
+		err := fmt.Errorf("BalanceWorkers has nothing to work\n")
+		return err, nil
+	}
+	fmt.Printf("start get balance from %d to %d  \n", addrs[0].id, addrs[len(addrs)-1].id)
+	wg.Add(nums)
+	totalWork := len(addrs)
+	step := totalWork / nums
+	// todo 这里有问题
+	balanceInfo := make([]*dbtypes.BalanceInfo, len(addrs))
+	if totalWork < nums {
+		for index, addr := range addrs {
+			balance, err := s.GetBalanceOfAddr(addr.address)
+			if err != nil {
+				fmt.Printf("BalanceWorkers GetBalanceOfAddr err %v\n", err)
+				return err, nil
+			}
+			binfo := &dbtypes.BalanceInfo{
+				Balance: balance,
+				Index:   addr.id,
+				Flag:    false,
+				Address: addr.address,
+			}
+			balanceInfo[index] = binfo
+			//todo
+			//balanceInfo = append(balanceInfo, binfo)
+		}
+		if len(balanceInfo) != len(addrs) {
+			err := fmt.Errorf("someone get balance err from %d  to %d\n", addrs[0].id, addrs[len(addrs)-1].id)
+			return err, nil
+		}
+		return nil, balanceInfo
+	}
+	for i := 0; i < nums; i++ {
+
+		go func(s *Service, i int) error {
+			//fmt.Printf("goroutine id %d\n", i)
+			var works []*AddressAndId
+			start := i * step
+			if i == nums-1 {
+				works = addrs[start:]
+				//fmt.Printf("  ----worker %d, get balance from %d to %d \n", i, addrs[start].id, addrs[len(addrs)-1].id)
+
+			} else {
+				works = addrs[start : start+step]
+				//fmt.Printf("  ----worker %d, get balance from %d to %d \n", i, addrs[start].id, addrs[start+step].id)
+
+			}
+			info, err := s.GetGetBalanceOfAddrs(works)
+			if err != nil {
+				return err
+			}
+
+			// 写入 balanceInfo
+			for index, v := range info {
+				balanceInfo[start+index] = v
+			}
+			//balanceInfo = append(balanceInfo, info...)
+			wg.Done()
+			return nil
+		}(s, i)
+
+	}
+	//todo handle err
+	wg.Wait()
+	if len(balanceInfo) != len(addrs) {
+		err := fmt.Errorf("someone get balance err from %d  to %d\n", addrs[0].id, addrs[len(addrs)-1].id)
+		return err, nil
+	}
+
+	return nil, balanceInfo
 }
 
 func (s *Service) CommitBalanceInfo() error {
@@ -348,4 +431,14 @@ func (s *Service) Start() {
 	}
 	fmt.Printf("work finished !!!!!!!")
 	return
+}
+
+func (s *Service) RetrieveBestBalanceIndex(ctx context.Context) (int64, error) {
+	index, err := s.cdb.RetrieveBestBalanceIndex(ctx)
+	return index, err
+}
+func (s *Service) RetrieveBestAddressId(ctx context.Context) (int64, error) {
+	id, err := s.cdb.RetrieveBestAddressId(ctx)
+	return id, err
+
 }

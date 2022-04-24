@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/bobo-boom/dcrnsugar/config"
-	"github.com/bobo-boom/dcrnsugar/db/dbtypes"
+	"sync"
 	"testing"
 )
 
@@ -53,13 +53,13 @@ func TestService_GetAddressAsync(t *testing.T) {
 			fmt.Println(err2)
 		}
 	}()
-	var ad *AddressAndId
-	for {
-		select {
-		case ad = <-service.AddressCh:
-			fmt.Println(*ad)
-		}
-	}
+	//var ad *AddressAndId
+	//for {
+	//	select {
+	//	case ad = <-service.AddressCh:
+	//		fmt.Println(*ad)
+	//	}
+	//}
 
 }
 func TestService_GetBalanceOfAddrAsync(t *testing.T) {
@@ -77,13 +77,13 @@ func TestService_GetBalanceOfAddrAsync(t *testing.T) {
 			fmt.Println(err2)
 		}
 	}()
-	for {
-		addid := &AddressAndId{
-			id:      1,
-			address: "DsjNv5h3jr1cZs5XF8TrPv2vhCbikwnE51B",
-		}
-		service.AddressCh <- addid
-	}
+	//for {
+	//	addid := &AddressAndId{
+	//		id:      1,
+	//		address: "DsjNv5h3jr1cZs5XF8TrPv2vhCbikwnE51B",
+	//	}
+	//	service.AddressCh <- addid
+	//}
 }
 func TestService_CommitBalanceInfo(t *testing.T) {
 	cof := &config.DefaultConfig
@@ -101,11 +101,38 @@ func TestService_CommitBalanceInfo(t *testing.T) {
 		}
 	}()
 
-	for {
-		balance := &dbtypes.BalanceInfo{
-			Index:   1,
-			Balance: 12,
-		}
-		service.BalanceInfoCh <- balance
+	//for {
+	//	balance := &dbtypes.BalanceInfo{
+	//		Index:   1,
+	//		Balance: 12,
+	//	}
+	//	service.BalanceInfoCh <- balance
+	//}
+}
+func TestBalanceWorkers(t *testing.T) {
+
+	cof := &config.DefaultConfig
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service, err := NewService(cof, ctx)
+	if err != nil {
+		fmt.Printf("err : %v\n", err)
 	}
+	ids := make([]*AddressAndId, 0)
+	for i := 0; i < 10; i++ {
+		a := &AddressAndId{
+			id:      int64(i),
+			address: "DsjNv5h3jr1cZs5XF8TrPv2vhCbikwnE51B",
+		}
+		ids = append(ids, a)
+
+	}
+	var wg sync.WaitGroup
+	wg.Add(5)
+	err, infos := BalanceWorkers(service, ids, 5, &wg)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(infos)
+	select {}
 }

@@ -23,6 +23,7 @@ func main() {
 		fmt.Printf("new service errr %v\n", err)
 		return
 	}
+
 	err = s.PrepareDB(ctx)
 	if err != nil {
 		fmt.Printf("prepare db err  %v\n", err)
@@ -57,18 +58,31 @@ func main() {
 	case <-ctx.Done():
 		return
 	case <-s.FinishCh:
+
 		for {
 			if !(len(s.BalanceInfoCh) == 0 && len(s.AddressCh) == 0) {
 				time.Sleep(2 * time.Second)
 				continue
 			}
-			time.Sleep(20 * time.Second)
+			fmt.Println("Do the final processing....")
+			end, _ := s.RetrieveBestAddressId(ctx)
+			for {
+				latest, _ := s.RetrieveBestBalanceIndex(ctx)
+				if latest != end {
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				fmt.Println("Finished !!!!!!!!!!!!!!!!!!!!!!!!!!")
+				break
+			}
 
-			close(s.FinishCh)
-			close(s.AddressCh)
 			close(s.BalanceInfoCh)
+			close(s.AddressCh)
+			close(s.FinishCh)
+
 			cancel()
-			fmt.Println("Finished !!!!!!!!!!!!!!!!!!!!!!!!!!")
+			fmt.Println("Bye !")
+			return
 
 		}
 	}
